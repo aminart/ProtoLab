@@ -50,12 +50,26 @@ export interface ProjectListItem {
   updated_at: string;
 }
 
-export interface LibrarySummary {
+export interface LibraryFile {
+  id: string;
+  name: string;
+  kind: "components" | "tokens";
+  imported_at: string;
   components: number;
   tokens: number;
-  components_source: string | null;
-  tokens_source: string | null;
-  tokens_from_styles: boolean;
+}
+
+export interface LibrarySummary {
+  files: LibraryFile[];
+  components: number;
+  tokens: number;
+  /** Alias tokens ("{color.brand.primary}") that point to no imported token. */
+  unresolved: string[];
+}
+
+export interface ImportError {
+  file: string;
+  message: string;
 }
 
 export interface AnalysisSummary {
@@ -110,6 +124,8 @@ export interface ProjectOverview {
   global_library: LibrarySummary | null;
   analysis: AnalysisSummary | null;
   versions: VersionInfo[];
+  imported?: number;
+  import_errors?: ImportError[];
 }
 
 export interface FlowLink {

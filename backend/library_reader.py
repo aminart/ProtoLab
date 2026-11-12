@@ -8,6 +8,7 @@ One import field takes any of these files, recognised by their content:
 from __future__ import annotations
 
 import re
+import uuid
 from typing import Any
 
 from context_reader import normalize
@@ -68,27 +69,64 @@ def _variables_tokens(payload: dict[str, Any]) -> list[dict[str, Any]] | None:
     return tokens
 
 
+COLOR_FUNCTION = re.compile(r"^(rgba?|hsla?)\(\s*[\d.%\s,/-]+\)$", re.I)
+ALIAS = re.compile(r"^\{([^{}]+)\}$")
+NUMBER = re.compile(r"^-?\d+(\.\d+)?(px|rem|em|%)?$")
+
+
+def token_key(name: str) -> str:
+    """Comparable name of a token: "color.brand.primary", "color/Brand/Primary" → "color/brand/primary"."""
+    return "/".join(part.strip().lower() for part in re.split(r"[./]", name) if part.strip())
+
+
+def _color(value: Any) -> str | None:
+    if isinstance(value, str):
+        text = value.strip()
+        if HEX.match(text):
+            return text.upper()
+        if COLOR_FUNCTION.match(text):
+            return text
+    if isinstance(value, dict):  # W3C 2025: {"colorSpace": "srgb", "components": [r, g, b], "hex": "#…"}
+        if isinstance(value.get("hex"), str) and HEX.match(value["hex"].strip()):
+            return value["hex"].strip().upper()
+        components = value.get("components")
+        if isinstance(components, list) and len(components) >= 3 and all(isinstance(c, (int, float)) for c in components[:3]):
+            return css_color({"r": components[0], "g": components[1], "b": components[2], "a": value.get("alpha", 1)})
+    return None
+
+
 def _design_tokens(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """W3C / Tokens Studio tokens. A value "{color.brand.primary}" is an alias, resolved later
+    against every token file of the library (a component file points to the foundations)."""
     tokens: list[dict[str, Any]] = []
 
     def visit(node: Any, path: list[str], inherited_type: str | None) -> None:
         if not isinstance(node, dict):
             return
         declared = node.get("$type") or node.get("type")
-        node_type = declared if isinstance(declared, str) else inherited_type
-        value_key = "$value" if "$value" in node else ("value" if "value" in node and not isinstance(node.get("value"), dict) else None)
+        node_type = (declared if isinstance(declared, str) else inherited_type) or ""
+        value_key = "$value" if "$value" in node else ("value" if "value" in node and isinstance(node.get("value"), (str, int, float)) else None)
         if value_key:
             value = node[value_key]
-            if isinstance(value, str) and HEX.match(value.strip()):
-                tokens.append({"name": "/".join(path), "type": "color", "value": value.strip().upper(), "collection": path[0] if path else "", "mode": ""})
-            elif isinstance(value, (int, float)) or (isinstance(value, str) and re.fullmatch(r"-?\d+(\.\d+)?(px|rem)?", value.strip())):
-                tokens.append({"name": "/".join(path), "type": "number", "value": value, "collection": path[0] if path else "", "mode": ""})
-            elif isinstance(value, str) and (node_type or "").lower() in ("fontfamily", "fontfamilies"):
-                tokens.append({"name": "/".join(path), "type": "string", "value": value, "collection": path[0] if path else "", "mode": ""})
+            name = "/".join(path)
+            base = {"name": name, "collection": path[0] if path else "", "mode": ""}
+            kind = node_type.lower()
+            alias = ALIAS.match(value.strip()) if isinstance(value, str) else None
+            color = _color(value)
+            if alias:
+                tokens.append({**base, "type": kind or "alias", "value": None, "alias": token_key(alias.group(1))})
+            elif color and kind in ("", "color"):
+                tokens.append({**base, "type": "color", "value": color})
+            elif isinstance(value, (int, float)) or (isinstance(value, str) and NUMBER.match(value.strip())):
+                tokens.append({**base, "type": "number", "value": value})
+            elif isinstance(value, str) and kind in ("fontfamily", "fontfamilies"):
+                tokens.append({**base, "type": "string", "value": value})
+            elif isinstance(value, list) and kind in ("fontfamily", "fontfamilies") and value and isinstance(value[0], str):
+                tokens.append({**base, "type": "string", "value": value[0]})
             return
         for key, child in node.items():
             if not key.startswith("$"):
-                visit(child, [*path, key], node_type)
+                visit(child, [*path, key], node_type or None)
 
     visit(payload, [], None)
     return tokens
@@ -150,66 +188,129 @@ def read_library(payload: Any, file_name: str = "") -> dict[str, Any]:
     if tokens:
         return {"kind": "tokens", "source": file_name, "components": [], "tokens": tokens}
     raise LibraryError(
-        "Fichier non reconnu : attendu le JSON Figma d’une bibliothèque, les variables d’un fichier Figma, ou un export de design tokens."
+        "fichier non reconnu : attendu le JSON Figma d’une bibliothèque, les variables d’un fichier Figma, ou un export de design tokens."
     )
 
 
-def merge_library(existing: dict[str, Any] | None, imported: dict[str, Any]) -> dict[str, Any]:
-    """A library keeps one components file and one tokens file; a new import replaces its kind."""
-    library = {"components": [], "tokens": [], "components_source": None, "tokens_source": None, "style_tokens": []}
-    library.update(existing or {})
-    if imported["kind"] == "components":
-        library["components"] = imported["components"]
-        library["components_source"] = imported["source"]
-        library["style_tokens"] = imported["tokens"]
-    else:
-        library["tokens"] = imported["tokens"]
-        library["tokens_source"] = imported["source"]
-    return library
+# --- A library = several files ------------------------------------------------------
+#
+# {"files": [{"id", "name", "kind", "imported_at", "components", "tokens"}]}. A file imported again
+# under the same name replaces the previous one; a component (Figma key) or a token (name) found in
+# several files comes from the most recent file.
 
 
-def library_summary(library: dict[str, Any] | None) -> dict[str, Any]:
-    library = library or {}
+def _upgrade(library: dict[str, Any] | None) -> dict[str, Any]:
+    """Libraries saved by 0.1.0 (one components file + one tokens file) → list of files."""
+    if not library:
+        return {"files": []}
+    if "files" in library:
+        return library
+    files = []
+    if library.get("components") or library.get("style_tokens"):
+        files.append({"id": "ancien-composants", "name": library.get("components_source") or "composants.json", "kind": "components",
+                      "imported_at": "", "components": library.get("components") or [], "tokens": library.get("style_tokens") or []})
+    if library.get("tokens"):
+        files.append({"id": "ancien-tokens", "name": library.get("tokens_source") or "tokens.json", "kind": "tokens",
+                      "imported_at": "", "components": [], "tokens": library["tokens"]})
+    return {"files": files}
+
+
+def add_files(library: dict[str, Any] | None, imported: list[dict[str, Any]], imported_at: str = "") -> dict[str, Any]:
+    files = list(_upgrade(library)["files"])
+    for item in imported:
+        files = [existing for existing in files if existing["name"] != item["source"]]
+        files.append({"id": uuid.uuid4().hex[:10], "name": item["source"], "kind": item["kind"], "imported_at": imported_at,
+                      "components": item["components"], "tokens": item["tokens"]})
+    return {"files": files}
+
+
+def remove_file(library: dict[str, Any] | None, file_id: str) -> dict[str, Any] | None:
+    files = [item for item in _upgrade(library)["files"] if item["id"] != file_id]
+    return {"files": files} if files else None
+
+
+def merged_components(library: dict[str, Any] | None) -> list[dict[str, Any]]:
+    components: dict[str, dict[str, Any]] = {}
+    for item in _upgrade(library)["files"]:
+        for component in item["components"]:
+            components[component.get("key") or component.get("id", "")] = component
+    return list(components.values())
+
+
+def merged_tokens(libraries: list[dict[str, Any] | None]) -> tuple[list[dict[str, Any]], list[str]]:
+    """Every token of the libraries, aliases resolved across files. The first library wins over the
+    next ones (project before global); inside a library, the latest file wins.
+    Returns the resolved tokens and the names of the aliases that point nowhere."""
+    by_key: dict[str, dict[str, Any]] = {}
+    for library in reversed([lib for lib in libraries if lib]):
+        for item in _upgrade(library)["files"]:
+            for token in item["tokens"]:
+                by_key[token_key(token["name"])] = token
+
+    def resolve(token: dict[str, Any], depth: int = 0) -> dict[str, Any] | None:
+        if not token.get("alias"):
+            return token
+        target = by_key.get(token["alias"])
+        if target is None or depth > 10:
+            return None
+        return resolve(target, depth + 1)
+
+    resolved, unresolved = [], []
+    for token in by_key.values():
+        target = resolve(token)
+        if target is None:
+            unresolved.append(token["name"])
+        else:
+            resolved.append({key: value for key, value in {**token, "type": target["type"], "value": target["value"]}.items() if key != "alias"})
+    return resolved, unresolved
+
+
+def library_summary(library: dict[str, Any] | None, resolve_with: list[dict[str, Any] | None] | None = None) -> dict[str, Any]:
+    """Counts shown in the app. `resolve_with`: other libraries an alias may point to."""
+    upgraded = _upgrade(library)
+    tokens, unresolved = merged_tokens([library, *(resolve_with or [])])
+    own = {token_key(token["name"]) for item in upgraded["files"] for token in item["tokens"]}
     return {
-        "components": len(library.get("components") or []),
-        "tokens": len(library.get("tokens") or []) or len(library.get("style_tokens") or []),
-        "components_source": library.get("components_source"),
-        "tokens_source": library.get("tokens_source"),
-        "tokens_from_styles": not library.get("tokens") and bool(library.get("style_tokens")),
+        "files": [
+            {"id": item["id"], "name": item["name"], "kind": item["kind"], "imported_at": item.get("imported_at", ""),
+             "components": len(item["components"]), "tokens": len(item["tokens"])}
+            for item in upgraded["files"]
+        ],
+        "components": len(merged_components(library)),
+        "tokens": len([token for token in tokens if token_key(token["name"]) in own]),
+        "unresolved": sorted(name for name in unresolved if token_key(name) in own)[:50],
     }
 
 
 def theme_from(libraries: list[dict[str, Any] | None]) -> dict[str, str]:
     """Colours of the generated screens (screens without a frame, messages): taken from the tokens,
-    the project library first, then the global design system."""
+    the project library first, then the global design system. Foundation colours (short names,
+    under "color") win over component tokens ("button/primary/background")."""
     theme = dict(DEFAULT_THEME)
-    found: set[str] = set()
-    for library in libraries:
-        if not library:
-            continue
-        tokens = (library.get("tokens") or []) + (library.get("style_tokens") or [])
-        for role, hints in THEME_HINTS.items():
-            if role in found:
-                continue
-            for hint in hints:
-                match = next((t for t in tokens if t["type"] == "color" and hint in normalize(t["name"])), None)
-                if match:
-                    theme[role] = str(match["value"])
-                    found.add(role)
-                    break
-        if "font" not in found:
-            font = next((t for t in tokens if t["type"] == "string" and "font" in normalize(t["name"])), None)
-            if font:
-                theme["font"] = f'"{font["value"]}", system-ui, sans-serif'
-                found.add("font")
+    tokens, _ = merged_tokens(libraries)
+    colors = [token for token in tokens if token["type"] == "color" and isinstance(token.get("value"), str)]
+
+    def rank(token: dict[str, Any]) -> tuple[int, int]:
+        name = normalize(token["name"])
+        return (0 if re.search(r"\b(color|colors|colour|couleur|couleurs|palette|semantic)\b", name) else 1, len(name.split()))
+
+    for role, hints in THEME_HINTS.items():
+        for hint in hints:
+            matches = sorted((token for token in colors if hint in normalize(token["name"])), key=rank)
+            if matches:
+                theme[role] = str(matches[0]["value"])
+                break
+    font = next((token for token in tokens if token["type"] == "string" and "font" in normalize(token["name"])), None)
+    if font:
+        theme["font"] = f'"{font["value"]}", system-ui, sans-serif'
     return theme
 
 
 def inventory(instances: list[dict[str, Any]], project_library: dict[str, Any] | None, global_library: dict[str, Any] | None,
               local_keys: set[str]) -> dict[str, Any]:
     """Where each component used by the mockup comes from."""
-    project_keys = {c["key"] for c in (project_library or {}).get("components") or [] if c.get("key")}
-    global_keys = {c["key"] for c in (global_library or {}).get("components") or [] if c.get("key")}
+    project_keys = {c["key"] for c in merged_components(project_library) if c.get("key")}
+    global_keys = {c["key"] for c in merged_components(global_library) if c.get("key")}
     rows = []
     for instance in instances:
         key = instance.get("key") or ""

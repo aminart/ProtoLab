@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
 import { api } from "../lib/api";
-import { plural } from "../lib/files";
 import type { GlobalLibrary } from "../lib/types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useToast } from "./Toasts";
-import { FileDrop, FileRow, PageHead } from "./ui";
+import { importMessage, LibraryFiles } from "./LibraryFiles";
+import { FileDrop, PageHead } from "./ui";
 
 export function LibrariesPage() {
   const toast = useToast();
@@ -20,10 +19,10 @@ export function LibrariesPage() {
   const upload = async (files: File[]) => {
     setBusy(true);
     try {
-      let latest: GlobalLibrary | null = library ?? null;
-      for (const file of files) latest = await api.uploadGlobalLibrary(file);
-      setLibrary(latest);
-      toast("success", "Design system global mis à jour.");
+      const result = await api.uploadGlobalLibrary(files);
+      setLibrary(result.library);
+      const message = importMessage(result.imported, result.import_errors);
+      toast(message.tone, message.text);
     } catch (error) {
       toast("error", (error as Error).message);
     } finally {
@@ -45,38 +44,37 @@ export function LibrariesPage() {
         <h2 className="text-[17px] font-bold text-ink">Fichiers</h2>
         <ul className="flex list-disc flex-col gap-1 pl-5 text-sm leading-normal text-ink-muted">
           <li>
-            <b className="font-medium text-ink-body">Composants</b> : le JSON du fichier Figma du design system (pages des composants seulement, pour un fichier plus léger).
+            <b className="font-medium text-ink-body">Tokens</b> : autant de fichiers qu’il faut (foundations, un fichier par composant…). Les alias comme{" "}
+            <code className="text-[13px]">{"{color.brand.primary}"}</code> sont résolus d’un fichier à l’autre. Les variables du fichier Figma (API REST, offres
+            Enterprise : <code className="text-[13px]">/v1/files/:key/variables/local</code>) conviennent aussi.
           </li>
           <li>
-            <b className="font-medium text-ink-body">Tokens</b> : les variables du fichier (API REST, offres Enterprise : <code className="text-[13px]">/v1/files/:key/variables/local</code>), ou un
-            export de tokens fait avec un plugin. À défaut, les styles de couleur du fichier des composants servent de tokens.
+            <b className="font-medium text-ink-body">Composants</b> : le JSON du ou des fichiers Figma du design system (pages des composants seulement, pour des fichiers
+            plus légers). Leurs styles de couleur servent de tokens à défaut.
           </li>
+          <li>Déposez des fichiers, un .zip ou un dossier entier. Un fichier réimporté sous le même nom remplace l’ancien.</li>
         </ul>
-        {library && (
-          <div className="flex flex-col gap-2">
-            {library.components_source && <FileRow name={library.components_source} status={<span className="chip chip-success">{plural(library.components, "composant", "composants")}</span>} />}
-            {(library.tokens_source || library.tokens_from_styles) && (
-              <FileRow
-                name={library.tokens_source ?? "Styles du fichier des composants"}
-                status={<span className="chip chip-success">{plural(library.tokens, "token", "tokens")}</span>}
-              />
-            )}
-          </div>
+        {library && library.files.length > 0 && (
+          <LibraryFiles
+            library={library}
+            onRemove={async (fileId) => {
+              try {
+                setLibrary(await api.deleteGlobalLibraryFile(fileId));
+              } catch (error) {
+                toast("error", (error as Error).message);
+              }
+            }}
+            onRemoveAll={() => setConfirm(true)}
+          />
         )}
-        <FileDrop accept=".json,application/json" multiple label="Déposez les composants et/ou les tokens (.json)" busy={busy} onFiles={upload} />
-        {library && (
-          <button type="button" className="btn-ghost btn-sm self-start text-danger-text" onClick={() => setConfirm(true)}>
-            <Trash2 className="h-4 w-4" aria-hidden />
-            Retirer le design system
-          </button>
-        )}
+        <FileDrop accept=".json,.zip,application/json,application/zip" multiple folder label="Déposez les fichiers du design system (.json, .zip ou dossier)" busy={busy} onFiles={upload} />
       </section>
 
       {colors.length > 0 && (
         <section className="card flex flex-col gap-4 p-6">
-          <h2 className="text-[17px] font-bold text-ink">Couleurs</h2>
+          <h2 className="text-[17px] font-bold text-ink">Couleurs{colors.length > 96 ? ` (96 sur ${colors.length})` : ""}</h2>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
-            {colors.map((token) => (
+            {colors.slice(0, 96).map((token) => (
               <div key={token.name} className="flex items-center gap-3 rounded-lg border border-line px-3 py-2">
                 <span className="h-8 w-8 shrink-0 rounded-md border border-line" style={{ background: String(token.value) }} aria-hidden />
                 <span className="min-w-0">
@@ -93,9 +91,9 @@ export function LibrariesPage() {
 
       {others.length > 0 && (
         <section className="card flex flex-col gap-3 p-6">
-          <h2 className="text-[17px] font-bold text-ink">Autres tokens</h2>
+          <h2 className="text-[17px] font-bold text-ink">Autres tokens{others.length > 80 ? ` (80 sur ${others.length})` : ""}</h2>
           <div className="flex flex-wrap gap-2">
-            {others.map((token) => (
+            {others.slice(0, 80).map((token) => (
               <span key={token.name} className="chip">
                 {token.name} · {String(token.value)}
               </span>

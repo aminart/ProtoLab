@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { formatDateTime, plural } from "../lib/files";
 import type { Page, ProjectOverview } from "../lib/types";
 import { useToast } from "./Toasts";
+import { importMessage, LibraryFiles } from "./LibraryFiles";
 import { FileDrop, FileRow, PageHead, SourceCard } from "./ui";
 
 const iconClass = "h-5 w-5";
@@ -31,6 +32,20 @@ export function SourcesPage({ project, onChange, onNavigate }: { project: Projec
       for (const file of files) latest = await api.uploadSpec(project.id, file);
       onChange(latest);
       toast("success", `${plural(files.length, "spec importée", "specs importées")}.`);
+    } catch (error) {
+      toast("error", (error as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const uploadLibrary = async (files: File[]) => {
+    setBusy("library");
+    try {
+      const updated = await api.uploadLibrary(project.id, files);
+      onChange(updated);
+      const message = importMessage(updated.imported ?? files.length, updated.import_errors);
+      toast(message.tone, message.text);
     } catch (error) {
       toast("error", (error as Error).message);
     } finally {
@@ -168,16 +183,14 @@ export function SourcesPage({ project, onChange, onNavigate }: { project: Projec
           icon={<Component className={iconClass} aria-hidden />}
           title="Bibliothèque du projet"
           tag={<span className="chip">Composants · tokens</span>}
-          description="Le JSON du fichier de bibliothèque, ses variables, ou un export de tokens : le type est reconnu à l’import."
+          description="Le JSON du fichier de bibliothèque, ses variables, ou des fichiers de tokens, autant qu’il faut : le type de chaque fichier est reconnu à l’import."
         >
-          {library && (
-            <>
-              <FileRow
-                name={[library.components_source, library.tokens_source].filter(Boolean).join(" + ") || "Bibliothèque"}
-                status={<span className="chip chip-success">{plural(library.components, "composant", "composants")} · {plural(library.tokens, "token", "tokens")}</span>}
-                actions={remove("la bibliothèque", () => run("library", () => api.deleteLibrary(project.id)))}
-              />
-            </>
+          {library && library.files.length > 0 && (
+            <LibraryFiles
+              library={library}
+              onRemove={(fileId) => run("library", () => api.deleteLibraryFile(project.id, fileId))}
+              onRemoveAll={() => run("library", () => api.deleteLibrary(project.id))}
+            />
           )}
           {figma && library?.inventory && (
             <div className="flex flex-wrap gap-2">
@@ -187,11 +200,13 @@ export function SourcesPage({ project, onChange, onNavigate }: { project: Projec
             </div>
           )}
           <FileDrop
-            accept=".json,application/json"
-            label={library ? "Ajouter ou remplacer un fichier" : "Déposez la bibliothèque du projet (.json)"}
+            accept=".json,.zip,application/json,application/zip"
+            multiple
+            folder
+            label={library ? "Ajouter des fichiers (.json, .zip ou dossier)" : "Déposez les fichiers de la bibliothèque (.json, .zip ou dossier)"}
             busy={busy === "library"}
             compact={Boolean(library)}
-            onFiles={([file]) => run("library", () => api.uploadLibrary(project.id, file), "Bibliothèque importée.")}
+            onFiles={uploadLibrary}
           />
           <button type="button" className="flex items-center gap-2 self-start text-[13px] font-medium text-accent underline-offset-2 hover:underline" onClick={() => onNavigate("libraries")}>
             <BookOpen className="h-4 w-4" aria-hidden />

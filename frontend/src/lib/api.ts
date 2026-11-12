@@ -1,6 +1,6 @@
 import type { Model } from "../player/types";
 import type {
-  ConnectionSettings, ConnectionTest, GlobalLibrary, Health, ProjectListItem, ProjectOverview, SettingsForm, Structure, VersionInfo,
+  ConnectionSettings, ConnectionTest, GlobalLibrary, Health, ImportError, ProjectListItem, ProjectOverview, SettingsForm, Structure, VersionInfo,
 } from "./types";
 
 async function parseError(response: Response): Promise<Error> {
@@ -20,6 +20,19 @@ async function request<T>(path: string, body?: unknown, method?: string): Promis
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if (!response.ok) throw await parseError(response);
+  return response.json() as Promise<T>;
+}
+
+/** Name sent with a file: its path inside the chosen folder when there is one ("tokens/button.json"). */
+export function fileLabel(file: File): string {
+  return (file as File & { webkitRelativePath?: string }).webkitRelativePath || (file as File & { relativePath?: string }).relativePath || file.name;
+}
+
+async function uploadMany<T>(path: string, files: File[]): Promise<T> {
+  const form = new FormData();
+  for (const file of files) form.append("files", file, fileLabel(file));
+  const response = await fetch(path, { method: "POST", body: form });
   if (!response.ok) throw await parseError(response);
   return response.json() as Promise<T>;
 }
@@ -62,11 +75,13 @@ export const api = {
   uploadFigma: (id: string, file: File) => upload<ProjectOverview>(`${project(id)}/figma`, file),
   choosePage: (id: string, pageId: string) => request<ProjectOverview>(`${project(id)}/figma/page`, { page_id: pageId }, "PUT"),
   deleteFigma: (id: string) => request<ProjectOverview>(`${project(id)}/figma`, undefined, "DELETE"),
-  uploadLibrary: (id: string, file: File) => upload<ProjectOverview>(`${project(id)}/library`, file),
+  uploadLibrary: (id: string, files: File[]) => uploadMany<ProjectOverview>(`${project(id)}/library`, files),
+  deleteLibraryFile: (id: string, fileId: string) => request<ProjectOverview>(`${project(id)}/library/files/${fileId}`, undefined, "DELETE"),
   deleteLibrary: (id: string) => request<ProjectOverview>(`${project(id)}/library`, undefined, "DELETE"),
 
   globalLibrary: () => request<GlobalLibrary | null>("/api/libraries/global"),
-  uploadGlobalLibrary: (file: File) => upload<GlobalLibrary>("/api/libraries/global", file),
+  uploadGlobalLibrary: (files: File[]) => uploadMany<{ library: GlobalLibrary; imported: number; import_errors: ImportError[] }>("/api/libraries/global", files),
+  deleteGlobalLibraryFile: (fileId: string) => request<GlobalLibrary | null>(`/api/libraries/global/files/${fileId}`, undefined, "DELETE"),
   deleteGlobalLibrary: () => request<null>("/api/libraries/global", undefined, "DELETE"),
 
   structure: (id: string) => request<Structure>(`${project(id)}/structure`),

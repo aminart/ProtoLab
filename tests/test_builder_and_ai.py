@@ -1,7 +1,7 @@
 from ai_enrichment import clean_analysis, clean_behaviors, screen_prompt
 from conftest import load_fixture
 from figma_reader import iter_nodes
-from library_reader import merge_library, read_library
+from library_reader import add_files, read_library
 from prototype_builder import _key, assemble, build_model
 
 
@@ -52,7 +52,7 @@ def test_model_navigation_points_to_screens(mockup, context_md):
 
 
 def test_theme_comes_from_the_libraries(mockup, context_md):
-    library = merge_library(None, read_library(load_fixture("global_variables.json")))
+    library = add_files(None, [read_library(load_fixture("global_variables.json"), "vars.json")])
     model = build_model(project(), assemble(project(), context_md, {}, mockup, library), library)
     assert model["theme"]["primary"] == "#0D5E52" and model["theme"]["danger"] == "#D92E21"
 

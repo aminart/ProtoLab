@@ -1,8 +1,10 @@
 """HTTP API of ProtoLab, and the compiled interface (frontend/dist) served from the same process."""
 from __future__ import annotations
 
+import io
 import json
 import re
+import zipfile
 import unicodedata
 from typing import Any
 
@@ -16,7 +18,7 @@ from ai_enrichment import analyze_context, enrich_screen
 from app_info import APP_ID, APP_NAME, VERSION
 from app_paths import frontend_dist_dir
 from export_html import PlayerMissing, build_html
-from library_reader import LibraryError, library_summary, merge_library, read_library
+from library_reader import LibraryError, add_files, library_summary, merged_components, merged_tokens, read_library, remove_file
 from openai_client import ModelAnswerError, get_missing_settings, get_model_name, is_custom_configured
 from prototype_builder import Assembly, assemble, build_model, figma_summary, spec_title
 from settings_api import router as settings_router
@@ -95,6 +97,7 @@ def _overview(project: dict[str, Any]) -> dict[str, Any]:
             "error": result.mermaid_error,
         }
     assigned = {screen["spec"]: screen["name"] for screen in result.screens if screen["spec"]}
+    global_library = store.load_global_library()
     return {
         "id": project["id"],
         "name": project["name"],
@@ -102,8 +105,8 @@ def _overview(project: dict[str, Any]) -> dict[str, Any]:
         "context": context,
         "specs": [{**spec, "screen": assigned.get(spec["id"])} for spec in project.get("specs") or []],
         "figma": {**project["figma"], **figma_summary(result)} if project.get("figma") else None,
-        "library": {**library_summary(project.get("library")), "inventory": result.inventory.get("counts")} if project.get("library") else None,
-        "global_library": library_summary(store.load_global_library()) if store.load_global_library() else None,
+        "library": {**library_summary(project.get("library"), [global_library]), "inventory": result.inventory.get("counts")} if project.get("library") else None,
+        "global_library": library_summary(global_library) if global_library else None,
         "analysis": _analysis_summary(project),
         "versions": project.get("versions") or [],
     }
@@ -266,14 +269,68 @@ def delete_figma(project_id: str) -> dict[str, Any]:
     return _overview(project)
 
 
+def _read_library_files(files: list[UploadFile]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Every library file of the upload (a .zip counts for all the .json it holds). A file that is
+    not recognised is reported and skipped: the others are imported."""
+    imported: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+
+    def take(name: str, raw: bytes) -> None:
+        try:
+            payload = json.loads(raw.decode("utf-8-sig"))
+        except (UnicodeDecodeError, ValueError):
+            errors.append({"file": name, "message": "JSON invalide"})
+            return
+        try:
+            imported.append(read_library(payload, name))
+        except LibraryError as exc:
+            errors.append({"file": name, "message": str(exc)})
+
+    for upload in files:
+        name = (upload.filename or "bibliotheque.json").replace("\\", "/")
+        raw = upload.file.read()
+        if name.lower().endswith(".zip"):
+            try:
+                with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                    for entry in archive.infolist():
+                        entry_name = entry.filename
+                        if entry.is_dir() or not entry_name.lower().endswith(".json") or "__MACOSX" in entry_name or entry_name.rsplit("/", 1)[-1].startswith("."):
+                            continue
+                        take(entry_name, archive.read(entry))
+            except zipfile.BadZipFile:
+                errors.append({"file": name, "message": "archive zip illisible"})
+        else:
+            take(name, raw)
+    if not imported and errors:
+        detail = "; ".join(f"{error['file']} : {error['message']}" for error in errors[:5])
+        raise HTTPException(status_code=422, detail=f"Aucun fichier importé. {detail}")
+    return imported, errors
+
+
+def _global_view(library: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not library:
+        return None
+    tokens, _ = merged_tokens([library])
+    return {
+        **library_summary(library),
+        "components_list": [{"name": c.get("set") or c.get("name", ""), "key": c.get("key", "")} for c in merged_components(library)][:500],
+        "tokens_list": tokens[:800],
+    }
+
+
 @app.post("/api/projects/{project_id}/library")
-def upload_project_library(project_id: str, file: UploadFile = File(...)) -> dict[str, Any]:
+def upload_project_library(project_id: str, files: list[UploadFile] = File(...)) -> dict[str, Any]:
     project = _project(project_id)
-    try:
-        imported = read_library(_read_json_upload(file), file.filename or "bibliotheque.json")
-    except LibraryError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    project["library"] = merge_library(project.get("library"), imported)
+    imported, errors = _read_library_files(files)
+    project["library"] = add_files(project.get("library"), imported, store.now())
+    store.save_project(project)
+    return {**_overview(project), "imported": len(imported), "import_errors": errors}
+
+
+@app.delete("/api/projects/{project_id}/library/files/{file_id}")
+def delete_project_library_file(project_id: str, file_id: str) -> dict[str, Any]:
+    project = _project(project_id)
+    project["library"] = remove_file(project.get("library"), file_id)
     store.save_project(project)
     return _overview(project)
 
@@ -291,21 +348,22 @@ def delete_project_library(project_id: str) -> dict[str, Any]:
 
 @app.get("/api/libraries/global")
 def global_library() -> dict[str, Any] | None:
-    library = store.load_global_library()
-    if not library:
-        return None
-    return {**library_summary(library), "components_list": [{"name": c["set"] or c["name"], "key": c["key"]} for c in library.get("components") or []][:500],
-            "tokens_list": (library.get("tokens") or library.get("style_tokens") or [])[:500]}
+    return _global_view(store.load_global_library())
 
 
 @app.post("/api/libraries/global")
-def upload_global_library(file: UploadFile = File(...)) -> dict[str, Any] | None:
-    try:
-        imported = read_library(_read_json_upload(file), file.filename or "design-system.json")
-    except LibraryError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    store.save_global_library(merge_library(store.load_global_library(), imported))
-    return global_library()
+def upload_global_library(files: list[UploadFile] = File(...)) -> dict[str, Any]:
+    imported, errors = _read_library_files(files)
+    library = add_files(store.load_global_library(), imported, store.now())
+    store.save_global_library(library)
+    return {"library": _global_view(library), "imported": len(imported), "import_errors": errors}
+
+
+@app.delete("/api/libraries/global/files/{file_id}")
+def delete_global_library_file(file_id: str) -> dict[str, Any] | None:
+    library = remove_file(store.load_global_library(), file_id)
+    store.save_global_library(library)
+    return _global_view(library)
 
 
 @app.delete("/api/libraries/global")

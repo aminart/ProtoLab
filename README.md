@@ -61,11 +61,13 @@ Les zones sans auto-layout sont affichées à taille fixe et signalées à l’i
 
 ### Bibliothèques
 
-Un seul champ d’import, le type est reconnu au contenu :
+Un seul champ d’import, autant de fichiers qu’il faut (un par un, en .zip ou un dossier entier) ; le type de chaque fichier est reconnu au contenu :
 
 - JSON d’un fichier de bibliothèque Figma (composants, variantes, styles de couleur) ;
 - variables d’un fichier (`GET /v1/files/:key/variables/local`, offres Enterprise) ;
-- export de design tokens (format W3C ou Tokens Studio).
+- fichiers de design tokens (format W3C ou Tokens Studio), par exemple les foundations et un fichier par composant.
+
+Les alias (`"{color.brand.primary}"`) sont résolus d’un fichier à l’autre, et de la bibliothèque projet vers le design system global ; ceux qui ne mènent à aucun token sont signalés. Un fichier réimporté sous le même nom remplace l’ancien ; un composant ou un token présent dans plusieurs fichiers vient du plus récent.
 
 Le **design system global** s’importe une fois (onglet « Design system ») et sert à tous les projets ; chaque projet ajoute sa bibliothèque. Les composants sont retrouvés par leur clé Figma ; les tokens donnent les couleurs des écrans sans maquette et des messages d’erreur.
 

@@ -1,5 +1,5 @@
-import { useRef, useState, type ReactNode } from "react";
-import { Loader2, Upload } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { FolderOpen, Loader2, Upload } from "lucide-react";
 
 export function PageHead({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
   return (
@@ -31,17 +31,57 @@ export function SourceCard({ icon, title, tag, description, children }: { icon: 
   );
 }
 
-/** Zone de dépôt + bouton Parcourir : appelle `onFiles` avec les fichiers choisis. */
-export function FileDrop({ accept, multiple, label, onFiles, busy, compact }: {
+/** Files of a drop, folders included (walked recursively; each file keeps its path in the folder). */
+async function droppedFiles(transfer: DataTransfer): Promise<File[]> {
+  const entries = Array.from(transfer.items)
+    .map((item) => item.webkitGetAsEntry?.())
+    .filter((entry): entry is FileSystemEntry => Boolean(entry));
+  if (!entries.length) return Array.from(transfer.files);
+  const files: File[] = [];
+  const walk = async (entry: FileSystemEntry, folder: string): Promise<void> => {
+    if (entry.isFile) {
+      const file = await new Promise<File>((resolve, reject) => (entry as FileSystemFileEntry).file(resolve, reject));
+      Object.defineProperty(file, "relativePath", { value: folder + file.name });
+      files.push(file);
+    } else if (entry.isDirectory) {
+      const reader = (entry as FileSystemDirectoryEntry).createReader();
+      let batch: FileSystemEntry[];
+      do {
+        batch = await new Promise<FileSystemEntry[]>((resolve, reject) => reader.readEntries(resolve, reject));
+        for (const child of batch) await walk(child, `${folder}${entry.name}/`);
+      } while (batch.length);
+    }
+  };
+  for (const entry of entries) await walk(entry, "");
+  return files;
+}
+
+/** Zone de dépôt + bouton Parcourir (et Dossier) : appelle `onFiles` avec les fichiers choisis. */
+export function FileDrop({ accept, multiple, folder, label, onFiles, busy, compact }: {
   accept: string;
   multiple?: boolean;
+  /** Propose aussi de choisir un dossier entier (ses fichiers du bon type, sous-dossiers compris). */
+  folder?: boolean;
   label: string;
   onFiles: (files: File[]) => void;
   busy?: boolean;
   compact?: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
+  const extensions = accept.split(",").map((item) => item.trim().toLowerCase()).filter((item) => item.startsWith("."));
+  const keep = (files: File[]) =>
+    files.filter((file) => !file.name.startsWith(".") && (!extensions.length || extensions.some((extension) => file.name.toLowerCase().endsWith(extension))));
+  const deliver = (files: File[]) => {
+    const kept = keep(files);
+    if (kept.length) onFiles(multiple ? kept : kept.slice(0, 1));
+  };
+
+  useEffect(() => {
+    folderInput.current?.setAttribute("webkitdirectory", "");
+  }, []);
+
   return (
     <div
       onDragOver={(event) => {
@@ -52,8 +92,8 @@ export function FileDrop({ accept, multiple, label, onFiles, busy, compact }: {
       onDrop={(event) => {
         event.preventDefault();
         setOver(false);
-        const files = Array.from(event.dataTransfer.files);
-        if (files.length) onFiles(multiple ? files : files.slice(0, 1));
+        if (busy) return;
+        droppedFiles(event.dataTransfer).then(deliver);
       }}
       className={`flex flex-wrap items-center justify-center gap-3 rounded-[10px] border border-dashed px-4 ${compact ? "py-3" : "py-5"} text-center transition ${
         over ? "border-accent bg-accent-soft" : "border-line-dashed"
@@ -64,6 +104,12 @@ export function FileDrop({ accept, multiple, label, onFiles, busy, compact }: {
       <button type="button" className="btn-soft btn-sm" disabled={busy} onClick={() => input.current?.click()}>
         Parcourir
       </button>
+      {folder && (
+        <button type="button" className="btn-ghost btn-sm" disabled={busy} onClick={() => folderInput.current?.click()}>
+          <FolderOpen className="h-4 w-4" aria-hidden />
+          Dossier
+        </button>
+      )}
       <input
         ref={input}
         type="file"
@@ -71,11 +117,22 @@ export function FileDrop({ accept, multiple, label, onFiles, busy, compact }: {
         multiple={multiple}
         className="hidden"
         onChange={(event) => {
-          const files = Array.from(event.target.files ?? []);
-          if (files.length) onFiles(files);
+          deliver(Array.from(event.target.files ?? []));
           event.target.value = "";
         }}
       />
+      {folder && (
+        <input
+          ref={folderInput}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            deliver(Array.from(event.target.files ?? []));
+            event.target.value = "";
+          }}
+        />
+      )}
     </div>
   );
 }

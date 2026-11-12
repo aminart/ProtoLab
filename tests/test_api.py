@@ -4,7 +4,8 @@ from conftest import FIXTURES, load_fixture
 
 
 def upload(client, path, name, content):
-    return client.post(path, files={"file": (name, content.encode("utf-8") if isinstance(content, str) else content)})
+    key = "files" if "library" in path or "libraries" in path else "file"
+    return client.post(path, files={key: (name, content.encode("utf-8") if isinstance(content, str) else content)})
 
 
 def make_project(client, mockup, context_md, spec_md):
@@ -55,8 +56,9 @@ def test_libraries(client, mockup, context_md, spec_md):
     assert overview["library"]["components"] == 1
     assert overview["library"]["inventory"] == {"project": 1, "global": 0, "local": 0, "missing": 2}
     upload(client, "/api/libraries/global", "ds.json", (FIXTURES / "global_components.json").read_text())
-    summary = upload(client, "/api/libraries/global", "vars.json", (FIXTURES / "global_variables.json").read_text()).json()
+    summary = upload(client, "/api/libraries/global", "vars.json", (FIXTURES / "global_variables.json").read_text()).json()["library"]
     assert summary["components"] == 2 and summary["tokens"] == 4
+    assert [f["name"] for f in summary["files"]] == ["ds.json", "vars.json"]
     overview = client.get(f"/api/projects/{pid}").json()
     assert overview["library"]["inventory"]["global"] == 1
     assert client.get(f"/api/projects/{pid}/prototype").json()["theme"]["primary"] == "#0D5E52"
@@ -127,3 +129,37 @@ def _nodes(node):
     yield node
     for child in node.get("children") or []:
         yield from _nodes(child)
+
+
+def test_many_token_files_zip_and_errors(client):
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("tokens/foundations/colors.json", json.dumps({"color": {"brand": {"primary": {"$value": "#0D5E52", "$type": "color"}}}}))
+        archive.writestr("tokens/components/button.json", json.dumps({"button": {"primary": {"background": {"$value": "{color.brand.primary}", "$type": "color"}}}}))
+        archive.writestr("__MACOSX/._colors.json", "binaire")
+        archive.writestr("lisez-moi.txt", "ignoré")
+    files = [
+        ("files", ("ds.zip", buffer.getvalue())),
+        ("files", ("tokens/components/input.json", json.dumps({"input": {"border": {"error": {"$value": "{color.feedback.error}"}}}}).encode())),
+        ("files", ("notes.json", b'{"hello": "world"}')),
+    ]
+    body = client.post("/api/libraries/global", files=files).json()
+    assert [f["name"] for f in body["library"]["files"]] == ["tokens/foundations/colors.json", "tokens/components/button.json", "tokens/components/input.json"]
+    assert body["import_errors"][0]["file"] == "notes.json"
+    assert body["library"]["unresolved"] == ["input/border/error"]
+    tokens = {t["name"]: t["value"] for t in body["library"]["tokens_list"]}
+    assert tokens["button/primary/background"] == "#0D5E52"
+
+    # Re-importing a file of the same name replaces it; a file can be removed alone.
+    body = client.post("/api/libraries/global", files=[("files", ("tokens/components/input.json", json.dumps({"input": {"border": {"error": {"$value": "#D92D20"}}}}).encode()))]).json()
+    assert len(body["library"]["files"]) == 3 and body["library"]["unresolved"] == []
+    file_id = body["library"]["files"][0]["id"]
+    library = client.delete(f"/api/libraries/global/files/{file_id}").json()
+    assert len(library["files"]) == 2
+    assert library["unresolved"] == ["button/primary/background"]
+
+    assert client.post("/api/libraries/global", files=[("files", ("x.json", b"{}"))]).status_code == 422
+    client.delete("/api/libraries/global")

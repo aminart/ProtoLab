@@ -7,6 +7,8 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 ### Ajouté
 - Lancement sur Mac : scripts `install_mac.sh` et `start_app_mac.sh`, double-clic sur « Lancer ProtoLab.command », guide pas à pas (README_MAC.md).
 - Sur Mac, la clé API est rangée dans le trousseau de session.
+- Design system global et bibliothèque projet en plusieurs fichiers : autant de fichiers de tokens ou de composants qu’il faut, déposés un par un, en .zip ou en dossier entier ; chaque fichier se retire seul, un fichier réimporté sous le même nom remplace l’ancien.
+- Les alias de tokens (« {color.brand.primary} ») sont résolus d’un fichier à l’autre, et de la bibliothèque projet vers le design system global ; les alias sans cible sont signalés.
 
 ## [0.1.0] - 2026-11-12
 
