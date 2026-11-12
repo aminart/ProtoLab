@@ -4,6 +4,10 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 
 ## [Non publié]
 
+### Ajouté
+- Lancement sur Mac : scripts `install_mac.sh` et `start_app_mac.sh`, double-clic sur « Lancer ProtoLab.command », guide pas à pas (README_MAC.md).
+- Sur Mac, la clé API est rangée dans le trousseau de session.
+
 ## [0.1.0] - 2026-11-12
 
 ### Ajouté

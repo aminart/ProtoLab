@@ -82,17 +82,19 @@ python backend/launcher.py                          # http://127.0.0.1:8030
 
 Sous Windows : `install_windows.bat`, puis `start_app.bat`. L’exe se fabrique avec `build_exe.bat` (ou par la release GitHub).
 
+Sur Mac : `./install_mac.sh`, puis `./start_app_mac.sh` ou double-clic sur `Lancer ProtoLab.command`. Pas à pas : [README_MAC.md](README_MAC.md).
+
 Développement de l’interface : `python backend/launcher.py --no-browser` et `npm run dev` dans `frontend` (5173, relaie `/api` et `/health` vers 8030).
 
 `npm run build` produit aussi le **lecteur autonome** (`frontend/dist-player/protolab-player.js`) inséré dans les exports HTML.
 
 ### Connexion au modèle
 
-Écran Paramètres (comme SpecGen) : URL du service compatible OpenAI, clé API (chiffrée avec le compte Windows), certificat de l’entreprise, modèle (`mistral` par défaut). Un fichier `.env` à côté de l’exe est prioritaire (`CUSTOM_API_BASE`, `CUSTOM_API_KEY`, `CUSTOM_CA_BUNDLE`, `CUSTOM_MODEL`, `CUSTOM_TIMEOUT_SECONDS`, `CUSTOM_MAX_OUTPUT_TOKENS`).
+Écran Paramètres (comme SpecGen) : URL du service compatible OpenAI, clé API (chiffrée avec le compte Windows, ou rangée dans le trousseau sur Mac), certificat de l’entreprise, modèle (`mistral` par défaut). Un fichier `.env` à côté de l’exe est prioritaire (`CUSTOM_API_BASE`, `CUSTOM_API_KEY`, `CUSTOM_CA_BUNDLE`, `CUSTOM_MODEL`, `CUSTOM_TIMEOUT_SECONDS`, `CUSTOM_MAX_OUTPUT_TOKENS`).
 
 ### Données
 
-Tout reste sur le poste, dans `%APPDATA%\ProtoLab` (Windows) : `projects/<id>/` (sources, réglages, versions figées) et `libraries/global.json`. `PROTOLAB_CONFIG_DIR` change ce dossier.
+Tout reste sur le poste, dans `%APPDATA%\ProtoLab` (Windows) ou `~/.config/protolab` (Mac) : `projects/<id>/` (sources, réglages, versions figées) et `libraries/global.json`. `PROTOLAB_CONFIG_DIR` change ce dossier.
 
 ## Contrat du portail
 

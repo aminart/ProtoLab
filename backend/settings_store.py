@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -23,6 +24,8 @@ from app_paths import config_dir, env_file
 DEFAULT_MODEL = "mistral"
 DEFAULT_TIMEOUT_SECONDS = 300.0
 CERTIFICATE_FILENAME = "ca.crt"
+KEYCHAIN_SERVICE = "ProtoLab"
+KEYCHAIN_ACCOUNT = "api_key"
 
 # Field name -> environment variable that overrides it.
 ENV_VARIABLES = {
@@ -85,15 +88,48 @@ if sys.platform == "win32":
     def _encrypt(value: str) -> dict[str, str]:
         return {"scheme": "dpapi", "data": base64.b64encode(_dpapi(value.encode("utf-8"), True)).decode("ascii")}
 
+elif sys.platform == "darwin":
+    # macOS: the key goes to the user's login keychain; config.json only notes where it is.
+    # The command is fed on stdin (security -i) so the key never shows in the process list.
+
+    def _keychain(command: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["security", "-i"], input=command + "\n", capture_output=True, text=True, timeout=15)
+
+    def _quote(value: str) -> str:
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    def _encrypt(value: str) -> dict[str, str]:
+        result = _keychain(f"add-generic-password -U -s {KEYCHAIN_SERVICE} -a {KEYCHAIN_ACCOUNT} -w {_quote(value)}")
+        if result.returncode != 0 or "error" in (result.stdout + result.stderr).lower():
+            raise OSError("Impossible d’enregistrer la clé API dans le trousseau macOS.")
+        return {"scheme": "keychain", "data": ""}
+
 else:
-    # Development on Linux/macOS only: no OS keystore wired, the key is merely encoded.
+    # Development on Linux only: no OS keystore wired, the key is merely encoded.
     def _encrypt(value: str) -> dict[str, str]:
         return {"scheme": "plain", "data": base64.b64encode(value.encode("utf-8")).decode("ascii")}
+
+
+def _read_keychain() -> str:
+    if sys.platform != "darwin":
+        return ""
+    result = subprocess.run(
+        ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"],
+        capture_output=True, text=True, timeout=15,
+    )
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _forget_keychain() -> None:
+    if sys.platform == "darwin":
+        subprocess.run(["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT], capture_output=True, timeout=15)
 
 
 def _decrypt(stored: dict[str, str] | None) -> str:
     if not stored:
         return ""
+    if stored.get("scheme") == "keychain":
+        return _read_keychain()
     raw = base64.b64decode(stored["data"])
     if stored.get("scheme") == "dpapi":
         if sys.platform != "win32":
@@ -128,8 +164,8 @@ def _write_saved(data: dict[str, Any]) -> None:
 def saved_api_key() -> str:
     try:
         return _decrypt(load_saved().get("api_key"))
-    except OSError:
-        # Encrypted by another Windows account: treat as missing.
+    except (OSError, subprocess.SubprocessError):
+        # Encrypted by another Windows account, or keychain unavailable: treat as missing.
         return ""
 
 
@@ -143,6 +179,8 @@ def save_settings(api_base: str, api_key: str | None, model: str, timeout: float
         }
     )
     if api_key is not None:
+        if not api_key.strip():
+            _forget_keychain()
         data["api_key"] = _encrypt(api_key.strip()) if api_key.strip() else None
     _write_saved(data)
 
@@ -154,6 +192,7 @@ def save_test_result(result: dict[str, Any]) -> None:
 
 
 def clear_settings() -> None:
+    _forget_keychain()
     for path in (_config_file(), certificate_path()):
         path.unlink(missing_ok=True)
 
