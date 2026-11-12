@@ -1,0 +1,11 @@
+node_modules/
+__pycache__/
+frontend/dist/
+frontend/dist-player/
+*.tsbuildinfo
+.pytest_cache/
+.venv/
+.env
+# Fabrication de l exe (PyInstaller)
+/build/
+/dist/
