@@ -1,0 +1,56 @@
+@import "night-navy/night-navy.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .field-label {
+    @apply text-[15px] font-medium text-ink;
+  }
+  .hint {
+    @apply text-[13px] leading-snug text-ink-subtle;
+  }
+  .btn {
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-not-allowed;
+  }
+  .btn-sm {
+    @apply min-h-[36px] px-3 text-[13px];
+  }
+  .btn-primary {
+    @apply btn bg-navy text-white hover:bg-navy-dark disabled:bg-primary-disabled disabled:text-primary-on-disabled;
+  }
+  .btn-secondary {
+    @apply btn border-[1.5px] border-ink-body dark:border-line-strong bg-surface text-ink hover:bg-surface-3 disabled:opacity-50;
+  }
+  .btn-soft {
+    @apply btn bg-navy-soft text-accent-ink hover:bg-surface-3 disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply btn text-ink-muted hover:bg-surface-3 hover:text-ink disabled:opacity-50;
+  }
+  .input-area {
+    @apply w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-subtle focus:border-accent focus:outline-none focus:ring-2 focus:ring-navy-soft disabled:opacity-60;
+  }
+  .card {
+    @apply rounded-xl border border-line bg-surface;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-surface-3 px-2.5 py-0.5 text-xs font-medium text-ink-muted;
+  }
+  .chip-success {
+    @apply bg-success-soft text-success-text;
+  }
+  .chip-warning {
+    @apply bg-warning-soft text-warning-text;
+  }
+  .chip-danger {
+    @apply bg-danger-soft text-danger-text;
+  }
+  .chip-accent {
+    @apply bg-accent-soft text-accent-ink;
+  }
+  .chip-ia {
+    @apply bg-ia-soft text-ia;
+  }
+}

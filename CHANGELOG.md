@@ -1,0 +1,18 @@
+# Journal des modifications
+
+Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros de version suivent [SemVer](https://semver.org/lang/fr/).
+
+## [Non publié]
+
+## [0.1.0] - 2026-11-12
+
+### Ajouté
+- Projets : document de contexte et specs de SpecGen, maquette Figma (JSON de l’API REST), bibliothèque du projet ; tout est enregistré sur le poste.
+- Structure lue sans IA dans le diagramme Mermaid du contexte : modules, écrans, navigation au travers des décisions et des actions système.
+- Rattachement automatique des écrans aux frames et aux specs par leur nom, corrigeable à la main ; écran de départ, exclusion d’écrans.
+- Conversion des frames Figma en écrans : auto-layout en flexbox, textes, ombres, contours, dégradés, icônes (avec `geometry=paths`), interactions de prototype.
+- Points à vérifier avant de générer : écrans sans maquette, frames hors du flow, zones sans auto-layout, liens Figma absents du flow, composants introuvables.
+- Design system global (composants, variables Figma ou tokens) partagé par tous les projets.
+- Modèle IA (compatible OpenAI, comme SpecGen) : objets métier et données de départ tirés du contexte ; règles des champs, effet des boutons, listes liées aux données et textes de détail, écran par écran.
+- Lecteur de prototype : saisie, messages d’erreur, données partagées entre les écrans, destinations conditionnelles, réinitialisation.
+- Versions figées, mode test plein écran et export HTML autonome.

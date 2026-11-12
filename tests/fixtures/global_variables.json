@@ -1,0 +1,70 @@
+{
+ "status": 200,
+ "error": false,
+ "meta": {
+  "variableCollections": {
+   "VC:1": {
+    "id": "VC:1",
+    "name": "Couleurs",
+    "defaultModeId": "m1",
+    "modes": [
+     {
+      "modeId": "m1",
+      "name": "Clair"
+     }
+    ]
+   }
+  },
+  "variables": {
+   "V:1": {
+    "id": "V:1",
+    "name": "color/primary",
+    "resolvedType": "COLOR",
+    "variableCollectionId": "VC:1",
+    "valuesByMode": {
+     "m1": {
+      "r": 0.05,
+      "g": 0.37,
+      "b": 0.32,
+      "a": 1
+     }
+    }
+   },
+   "V:2": {
+    "id": "V:2",
+    "name": "color/error",
+    "resolvedType": "COLOR",
+    "variableCollectionId": "VC:1",
+    "valuesByMode": {
+     "m1": {
+      "type": "VARIABLE_ALIAS",
+      "id": "V:3"
+     }
+    }
+   },
+   "V:3": {
+    "id": "V:3",
+    "name": "red/600",
+    "resolvedType": "COLOR",
+    "variableCollectionId": "VC:1",
+    "valuesByMode": {
+     "m1": {
+      "r": 0.85,
+      "g": 0.18,
+      "b": 0.13,
+      "a": 1
+     }
+    }
+   },
+   "V:4": {
+    "id": "V:4",
+    "name": "spacing/md",
+    "resolvedType": "FLOAT",
+    "variableCollectionId": "VC:1",
+    "valuesByMode": {
+     "m1": 16
+    }
+   }
+  }
+ }
+}
