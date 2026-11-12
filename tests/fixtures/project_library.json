@@ -1,0 +1,55 @@
+{
+ "name": "Portail – bibliothèque projet",
+ "document": {
+  "id": "0:0",
+  "type": "DOCUMENT",
+  "children": [
+   {
+    "id": "0:1",
+    "name": "Composants",
+    "type": "CANVAS",
+    "children": [
+     {
+      "id": "5:1",
+      "name": "Carte demande",
+      "type": "COMPONENT",
+      "absoluteBoundingBox": {
+       "x": 0,
+       "y": 0,
+       "width": 342,
+       "height": 64
+      },
+      "children": [],
+      "fills": [
+       {
+        "type": "SOLID",
+        "color": {
+         "r": 1,
+         "g": 1,
+         "b": 1,
+         "a": 1
+        }
+       }
+      ],
+      "styles": {
+       "fill": "S:1"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "components": {
+  "5:1": {
+   "key": "key-card",
+   "name": "Carte demande"
+  }
+ },
+ "styles": {
+  "S:1": {
+   "key": "s1",
+   "name": "Surface/Default",
+   "styleType": "FILL"
+  }
+ }
+}

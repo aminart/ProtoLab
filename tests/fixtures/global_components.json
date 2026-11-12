@@ -1,0 +1,71 @@
+{
+ "name": "Design system",
+ "document": {
+  "id": "0:0",
+  "type": "DOCUMENT",
+  "children": [
+   {
+    "id": "0:1",
+    "name": "Composants",
+    "type": "CANVAS",
+    "children": [
+     {
+      "id": "7:1",
+      "name": "Input",
+      "type": "COMPONENT_SET",
+      "absoluteBoundingBox": {
+       "x": 0,
+       "y": 0,
+       "width": 342,
+       "height": 72
+      },
+      "children": [
+       {
+        "id": "7:2",
+        "name": "State=Default",
+        "type": "COMPONENT",
+        "absoluteBoundingBox": {
+         "x": 0,
+         "y": 0,
+         "width": 342,
+         "height": 72
+        },
+        "children": []
+       },
+       {
+        "id": "7:3",
+        "name": "State=Error",
+        "type": "COMPONENT",
+        "absoluteBoundingBox": {
+         "x": 0,
+         "y": 80,
+         "width": 342,
+         "height": 72
+        },
+        "children": []
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "components": {
+  "7:2": {
+   "key": "key-input",
+   "name": "State=Default",
+   "componentSetId": "7:1"
+  },
+  "7:3": {
+   "key": "key-input-error",
+   "name": "State=Error",
+   "componentSetId": "7:1"
+  }
+ },
+ "componentSets": {
+  "7:1": {
+   "key": "set-input",
+   "name": "Input"
+  }
+ }
+}
