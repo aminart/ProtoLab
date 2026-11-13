@@ -3,6 +3,18 @@ import type {
   ConnectionSettings, ConnectionTest, GlobalLibrary, Health, ImportError, ProjectListItem, ProjectOverview, SettingsForm, Structure, VersionInfo,
 } from "./types";
 
+const UNREACHABLE =
+  "Le serveur ProtoLab ne répond pas : la fenêtre où il tourne (Terminal ou invite de commandes) a peut-être été fermée, ou il s’est arrêté sur une erreur. Relancez-le, puis rechargez la page.";
+
+/** fetch, with a readable message when the server cannot be reached (instead of « Failed to fetch »). */
+async function call(path: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(path, init);
+  } catch {
+    throw new Error(UNREACHABLE);
+  }
+}
+
 async function parseError(response: Response): Promise<Error> {
   let detail = `Erreur ${response.status}`;
   try {
@@ -15,7 +27,7 @@ async function parseError(response: Response): Promise<Error> {
 }
 
 async function request<T>(path: string, body?: unknown, method?: string): Promise<T> {
-  const response = await fetch(path, {
+  const response = await call(path, {
     method: method ?? (body === undefined ? "GET" : "POST"),
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -32,7 +44,7 @@ export function fileLabel(file: File): string {
 async function uploadMany<T>(path: string, files: File[]): Promise<T> {
   const form = new FormData();
   for (const file of files) form.append("files", file, fileLabel(file));
-  const response = await fetch(path, { method: "POST", body: form });
+  const response = await call(path, { method: "POST", body: form });
   if (!response.ok) throw await parseError(response);
   return response.json() as Promise<T>;
 }
@@ -40,7 +52,7 @@ async function uploadMany<T>(path: string, files: File[]): Promise<T> {
 async function upload<T>(path: string, file: File): Promise<T> {
   const form = new FormData();
   form.append("file", file);
-  const response = await fetch(path, { method: "POST", body: form });
+  const response = await call(path, { method: "POST", body: form });
   if (!response.ok) throw await parseError(response);
   return response.json() as Promise<T>;
 }
@@ -100,7 +112,7 @@ export const api = {
 
 export async function downloadExport(id: string, versionId?: string): Promise<void> {
   const query = versionId ? `?version=${encodeURIComponent(versionId)}` : "";
-  const response = await fetch(`${project(id)}/export${query}`);
+  const response = await call(`${project(id)}/export${query}`);
   if (!response.ok) throw await parseError(response);
   const disposition = response.headers.get("Content-Disposition") ?? "";
   const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? "prototype.html";

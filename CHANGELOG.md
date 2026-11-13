@@ -5,6 +5,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 ## [Non publié]
 
 ### Corrigé
+- Quand le serveur ne répond plus, un message en français explique quoi faire, au lieu de « Failed to fetch ».
 - Exports réels de l’API Figma : la taille automatique des textes (rangée dans leur style) est respectée, et les lignes sont dessinées à leur place.
 
 ### Ajouté
