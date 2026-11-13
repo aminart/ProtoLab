@@ -112,3 +112,18 @@ def test_outline_and_repeat_groups(mockup):
     groups = repeat_groups(roots["1:2"])
     assert len(groups) == 1 and len(groups[0]["items"]) == 3
     assert [t["text"] for t in groups[0]["texts"]] == ["Achat de licences", "320 €"]
+
+
+def test_real_api_export_text_resize_in_style_and_lines():
+    """The REST API puts textAutoResize in the text style; a line's box has no height."""
+    frame = {"id": "1:6", "type": "FRAME", "name": "Frame 1", "absoluteBoundingBox": {"x": -1050, "y": -200, "width": 1189, "height": 842}, "children": [
+        {"id": "1:27", "type": "TEXT", "name": "Titre", "characters": "Profilage Segment", "absoluteBoundingBox": {"x": -1050, "y": -187, "width": 201, "height": 36},
+         "style": {"fontFamily": "Roboto", "fontWeight": 700, "fontSize": 24, "textAutoResize": "WIDTH_AND_HEIGHT"}, "fills": []},
+        {"id": "1:17", "type": "LINE", "name": "Line 1", "absoluteBoundingBox": {"x": -1017, "y": -15, "width": 540, "height": 0},
+         "strokes": [{"type": "SOLID", "color": {"r": 0, "g": 0, "b": 1, "a": 1}}], "strokeWeight": 4, "strokeAlign": "CENTER"},
+    ]}
+    figma = load_figma({"name": "x", "nodes": {"1:6": {"document": frame}}})
+    root = convert_screen(Converter(figma), figma.roots[0])
+    title, line = root["children"]
+    assert title["style"]["whiteSpace"] == "pre" and "width" not in title["style"]
+    assert line["style"]["top"] == "183px" and line["style"]["height"] == "4px" and line["style"]["backgroundColor"] == "#0000FF"

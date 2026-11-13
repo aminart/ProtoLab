@@ -309,6 +309,12 @@ def text_style(node: dict[str, Any]) -> dict[str, str]:
 # --- Layout ---------------------------------------------------------------------
 
 
+def text_auto_resize(node: dict[str, Any]) -> str | None:
+    """WIDTH_AND_HEIGHT, HEIGHT, TRUNCATE or NONE. The REST API puts it in the text style;
+    older exports and plugins put it on the node."""
+    return node.get("textAutoResize") or (node.get("style") or {}).get("textAutoResize")
+
+
 def _is_auto_layout(node: dict[str, Any]) -> bool:
     return node.get("layoutMode") in ("HORIZONTAL", "VERTICAL")
 
@@ -324,7 +330,7 @@ def _sizing(node: dict[str, Any], axis: str, parent_mode: str | None) -> str:
     if axis != parent_primary and node.get("layoutAlign") == "STRETCH":
         return "FILL"
     if node.get("type") == "TEXT":
-        resize = node.get("textAutoResize")
+        resize = text_auto_resize(node)
         if resize == "WIDTH_AND_HEIGHT" or (resize == "HEIGHT" and axis == "v"):
             return "HUG"
         return "FIXED"
@@ -368,10 +374,17 @@ def _size_style(node: dict[str, Any], parent: dict[str, Any] | None, box: dict[s
         css["position"] = "absolute"
         css["left"] = _px(box["x"] - (parent_box or box)["x"])
         css["top"] = _px(box["y"] - (parent_box or box)["y"])
-        if node.get("type") == "TEXT" and node.get("textAutoResize") == "WIDTH_AND_HEIGHT":
+        if node.get("type") == "LINE":
+            # A line's box has no height: draw its stroke centred on it (Figma's default).
+            weight = max(1.0, float(node.get("strokeWeight") or 1))
+            offset = {"CENTER": weight / 2, "OUTSIDE": weight, "INSIDE": 0.0}.get(node.get("strokeAlign") or "CENTER", weight / 2)
+            css["top"] = _px(box["y"] - (parent_box or box)["y"] - offset)
+            css["width"] = _px(box["width"])
+            return css
+        if node.get("type") == "TEXT" and text_auto_resize(node) == "WIDTH_AND_HEIGHT":
             return css
         css["width"] = _px(box["width"])
-        if not (node.get("type") == "TEXT" and node.get("textAutoResize") == "HEIGHT"):
+        if not (node.get("type") == "TEXT" and text_auto_resize(node) == "HEIGHT"):
             css["height"] = _px(box["height"])
         return css
     row = parent["layoutMode"] == "HORIZONTAL"
@@ -533,7 +546,7 @@ class Converter:
             out["type"] = "text"
             out["text"] = str(node.get("characters") or "")
             style.update(text_style(node))
-            resize = node.get("textAutoResize")
+            resize = text_auto_resize(node)
             style["whiteSpace"] = "pre" if resize == "WIDTH_AND_HEIGHT" else "pre-wrap"
             style["overflowWrap"] = "break-word"
             if resize == "TRUNCATE" or (node.get("style") or {}).get("textTruncation") == "ENDING":
